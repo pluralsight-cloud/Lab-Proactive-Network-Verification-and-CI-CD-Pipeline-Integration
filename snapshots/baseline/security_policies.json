@@ -1,0 +1,49 @@
+{
+  "security_policies": [
+    {
+      "name": "block-dev-to-prod-db",
+      "description": "Block direct access from Dev VPC to Production database subnet",
+      "action": "DENY",
+      "source": "10.3.0.0/16",
+      "destination": "10.1.2.0/24",
+      "protocol": "tcp",
+      "port_range": "3306"
+    },
+    {
+      "name": "block-staging-to-prod-db",
+      "description": "Block direct access from Staging VPC to Production database subnet",
+      "action": "DENY",
+      "source": "10.2.0.0/16",
+      "destination": "10.1.2.0/24",
+      "protocol": "tcp",
+      "port_range": "3306"
+    },
+    {
+      "name": "allow-prod-app-to-prod-db",
+      "description": "Allow Production app subnet to access Production database",
+      "action": "PERMIT",
+      "source": "10.1.1.0/24",
+      "destination": "10.1.2.0/24",
+      "protocol": "tcp",
+      "port_range": "3306"
+    },
+    {
+      "name": "block-internet-to-db",
+      "description": "Block internet access to any database subnet",
+      "action": "DENY",
+      "source": "0.0.0.0/0",
+      "destination": "10.1.2.0/24",
+      "protocol": "tcp",
+      "port_range": "0-65535"
+    },
+    {
+      "name": "allow-prod-staging-peering",
+      "description": "Allow HTTP/HTTPS traffic between Production and Staging",
+      "action": "PERMIT",
+      "source": "10.1.0.0/16",
+      "destination": "10.2.0.0/16",
+      "protocol": "tcp",
+      "port_range": "80,443"
+    }
+  ]
+}
