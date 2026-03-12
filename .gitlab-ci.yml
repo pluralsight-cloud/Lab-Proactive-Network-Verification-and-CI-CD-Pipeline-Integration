@@ -1,0 +1,40 @@
+stages:
+  - verify
+  - rollback
+  - post-check
+
+variables:
+  BASELINE_DIR: "snapshots/baseline"
+  CHANGED_DIR: "snapshots/changed"
+  RESULTS_DIR: "results"
+
+pre-flight-verification:
+  stage: verify
+  script:
+    - echo "Running pre-flight network verification..."
+    - python3 scripts/ci_verify.py $BASELINE_DIR $CHANGED_DIR $RESULTS_DIR
+  artifacts:
+    paths:
+      - results/
+    when: always
+  allow_failure: false
+
+automated-rollback:
+  stage: rollback
+  script:
+    - echo "Verification failed. Running automated rollback..."
+    - python3 scripts/rollback.py $BASELINE_DIR $CHANGED_DIR $RESULTS_DIR
+  when: on_failure
+  artifacts:
+    paths:
+      - results/
+
+post-rollback-verify:
+  stage: post-check
+  script:
+    - echo "Verifying rollback restored baseline state..."
+    - python3 scripts/ci_verify.py $BASELINE_DIR $CHANGED_DIR $RESULTS_DIR
+  when: on_failure
+  artifacts:
+    paths:
+      - results/
