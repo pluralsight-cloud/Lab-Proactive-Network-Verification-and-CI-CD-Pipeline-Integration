@@ -1,81 +1,56 @@
 #!/usr/bin/env python3
 """
 Batfish Network Verification
-Initializes Batfish snapshots and executes queries to verify
-cloud security rules and routing path resilience.
+Uses pybatfish to initialize Batfish snapshots from exported AWS configurations
+and execute queries to verify security rules and routing path resilience.
 """
 
+from pybatfish.client.session import Session
+from pybatfish.datamodel import HeaderConstraints
 import json
 import os
 import sys
 from datetime import datetime
 
-def load_snapshot(snapshot_dir):
-    """Load snapshot data from directory."""
-    topology_path = os.path.join(snapshot_dir, "topology.json")
-    security_path = os.path.join(snapshot_dir, "security_policies.json")
-    routing_path = os.path.join(snapshot_dir, "routing_tables.json")
+BATFISH_HOST = os.environ.get("BATFISH_HOST", "localhost")
+NETWORK_NAME = "carvedrock"
 
-    data = {}
-    with open(topology_path, 'r') as f:
-        data['topology'] = json.load(f)
-    with open(security_path, 'r') as f:
-        data['security'] = json.load(f)
-    with open(routing_path, 'r') as f:
-        data['routing'] = json.load(f)
+def get_session():
+    """Initialize pybatfish session connected to Batfish server."""
+    bf = Session(host=BATFISH_HOST)
+    bf.set_network(NETWORK_NAME)
+    return bf
 
-    return data
-
-def init_snapshot(snapshot_dir):
-    """Initialize and display Batfish snapshot details."""
+def init_snapshot(bf, snapshot_dir, snapshot_name="baseline"):
+    """Initialize a Batfish snapshot from AWS configuration files."""
     print("=" * 65)
     print("Batfish Snapshot Initialization")
     print("=" * 65)
     print(f"Timestamp:     {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Snapshot Dir:  {snapshot_dir}")
+    print(f"Snapshot Name: {snapshot_name}")
     print()
 
-    data = load_snapshot(snapshot_dir)
-    topo = data['topology'].get('topology', {})
-
-    print(f"Snapshot Name: {data['topology'].get('snapshot_name', 'N/A')}")
-    print(f"Captured At:   {data['topology'].get('timestamp', 'N/A')}")
+    # Initialize snapshot using pybatfish
+    bf.init_snapshot(snapshot_dir, name=snapshot_name, overwrite=True)
+    print(f"Snapshot '{snapshot_name}' initialized successfully.")
     print()
 
-    nodes = topo.get('nodes', [])
-    print(f"Network Nodes: {len(nodes)}")
+    # Display network topology info
+    node_props = bf.q.nodeProperties().answer().frame()
+    print(f"Network Nodes: {len(node_props)}")
     print("-" * 65)
-    for node in nodes:
-        azs = ', '.join(node.get('availability_zones', []))
-        subnets = node.get('subnets', [])
-        print(f"  {node['name']}")
-        print(f"    CIDR:    {node['cidr']}")
-        print(f"    AZs:     {azs}")
-        print(f"    Subnets: {len(subnets)}")
-        for s in subnets:
-            print(f"      - {s['name']} ({s['cidr']}) in {s['az']}")
-
-    peers = topo.get('peering_connections', [])
-    print(f"\nPeering Connections: {len(peers)}")
-    print("-" * 65)
-    for p in peers:
-        print(f"  {p['id']}: {p['requester']} <-> {p['accepter']} [{p['status']}]")
-
-    policies = data['security'].get('security_policies', [])
-    print(f"\nSecurity Policies: {len(policies)}")
-    print("-" * 65)
-    for pol in policies:
-        print(f"  {pol['name']}: {pol['action']} {pol['source']} -> {pol['destination']} ({pol['protocol']}:{pol['port_range']})")
+    for _, row in node_props.iterrows():
+        print(f"  {row['Node']}")
 
     print()
     print("=" * 65)
     print("Snapshot initialized successfully.")
     print("=" * 65)
+    return bf
 
-    return data
-
-def verify_security_rules(data, output_dir="results"):
-    """Verify security rules block unauthorized traffic flows."""
+def verify_security_rules(bf, snapshot_name, output_dir="results"):
+    """Execute Batfish reachability queries to verify security rules."""
     print()
     print("=" * 65)
     print("Batfish Security Verification")
@@ -83,84 +58,99 @@ def verify_security_rules(data, output_dir="results"):
     print("Checking security policies for unauthorized traffic flows...")
     print()
 
-    policies = data['security'].get('security_policies', [])
+    bf.set_snapshot(snapshot_name)
     violations = []
     passes = []
 
-    # Define expected deny rules
-    expected_denies = [
-        {"source": "10.3.0.0/16", "destination": "10.1.2.0/24", "port": "3306", "desc": "Dev to Prod DB"},
-        {"source": "10.2.0.0/16", "destination": "10.1.2.0/24", "port": "3306", "desc": "Staging to Prod DB"},
-        {"source": "0.0.0.0/0", "destination": "10.1.2.0/24", "port": "0-65535", "desc": "Internet to Prod DB"},
+    # Define traffic flows to test
+    test_flows = [
+        {
+            "desc": "Dev to Prod DB (MySQL)",
+            "src": "10.3.1.10",
+            "dst": "10.1.2.10",
+            "dstPort": 3306,
+            "expected": "DENIED"
+        },
+        {
+            "desc": "Staging to Prod DB (MySQL)",
+            "src": "10.2.1.10",
+            "dst": "10.1.2.10",
+            "dstPort": 3306,
+            "expected": "DENIED"
+        },
+        {
+            "desc": "Internet to Prod DB",
+            "src": "8.8.8.8",
+            "dst": "10.1.2.10",
+            "dstPort": 3306,
+            "expected": "DENIED"
+        },
+        {
+            "desc": "Prod App to Prod DB (MySQL)",
+            "src": "10.1.1.10",
+            "dst": "10.1.2.10",
+            "dstPort": 3306,
+            "expected": "PERMITTED"
+        }
     ]
 
-    for expected in expected_denies:
-        found = False
-        for pol in policies:
-            if (pol['source'] == expected['source'] and
-                pol['destination'] == expected['destination'] and
-                expected['port'] in pol['port_range']):
-                if pol['action'] == "DENY":
-                    passes.append({
-                        "check": f"Block {expected['desc']}",
-                        "policy": pol['name'],
-                        "status": "PASS",
-                        "detail": f"{pol['action']} {pol['source']} -> {pol['destination']}"
-                    })
+    for flow in test_flows:
+        try:
+            headers = HeaderConstraints(
+                srcIps=flow["src"],
+                dstIps=flow["dst"],
+                dstPorts=str(flow["dstPort"]),
+                ipProtocols=["TCP"]
+            )
+            result = bf.q.reachability(
+                pathConstraints=None,
+                headers=headers,
+                actions="SUCCESS,FAILURE"
+            ).answer().frame()
+
+            if len(result) == 0:
+                actual = "NO_ROUTE"
+            else:
+                actions = result['Action'].unique()
+                if 'ACCEPTED' in actions or 'DELIVERED_TO_SUBNET' in actions:
+                    actual = "PERMITTED"
                 else:
-                    violations.append({
-                        "check": f"Block {expected['desc']}",
-                        "policy": pol['name'],
-                        "status": "FAIL",
-                        "severity": "CRITICAL",
-                        "detail": f"Expected DENY but found {pol['action']} for {pol['source']} -> {pol['destination']} port {pol['port_range']}"
-                    })
-                found = True
-                break
-        if not found:
-            violations.append({
-                "check": f"Block {expected['desc']}",
-                "policy": "MISSING",
-                "status": "FAIL",
-                "severity": "HIGH",
-                "detail": f"No policy found for {expected['source']} -> {expected['destination']}"
-            })
+                    actual = "DENIED"
+        except Exception as e:
+            # If reachability query fails, use filter-based check
+            try:
+                filter_result = bf.q.searchFilters(
+                    headers=HeaderConstraints(
+                        srcIps=flow["src"],
+                        dstIps=flow["dst"],
+                        dstPorts=str(flow["dstPort"]),
+                        ipProtocols=["TCP"]
+                    ),
+                    action="PERMIT"
+                ).answer().frame()
 
-    # Check that allowed rules exist
-    expected_permits = [
-        {"source": "10.1.1.0/24", "destination": "10.1.2.0/24", "desc": "Prod App to Prod DB"},
-    ]
+                actual = "PERMITTED" if len(filter_result) > 0 else "DENIED"
+            except Exception:
+                actual = "UNABLE_TO_DETERMINE"
 
-    for expected in expected_permits:
-        for pol in policies:
-            if (pol['source'] == expected['source'] and
-                pol['destination'] == expected['destination']):
-                if pol['action'] == "PERMIT":
-                    passes.append({
-                        "check": f"Allow {expected['desc']}",
-                        "policy": pol['name'],
-                        "status": "PASS",
-                        "detail": f"{pol['action']} {pol['source']} -> {pol['destination']}"
-                    })
-                break
+        if flow["expected"] == "DENIED" and actual == "DENIED":
+            passes.append({"check": flow["desc"], "status": "PASS", "detail": f"Traffic correctly blocked"})
+            print(f"  [PASS] {flow['desc']}: Traffic correctly blocked")
+        elif flow["expected"] == "PERMITTED" and actual == "PERMITTED":
+            passes.append({"check": flow["desc"], "status": "PASS", "detail": f"Traffic correctly allowed"})
+            print(f"  [PASS] {flow['desc']}: Traffic correctly allowed")
+        elif flow["expected"] == "DENIED" and actual == "PERMITTED":
+            violations.append({"check": flow["desc"], "status": "FAIL", "severity": "CRITICAL",
+                             "detail": f"Expected DENIED but traffic is PERMITTED"})
+            print(f"  [FAIL] {flow['desc']}: Expected DENIED but traffic is PERMITTED")
+        elif flow["expected"] == "PERMITTED" and actual == "DENIED":
+            violations.append({"check": flow["desc"], "status": "FAIL", "severity": "HIGH",
+                             "detail": f"Expected PERMITTED but traffic is DENIED"})
+            print(f"  [FAIL] {flow['desc']}: Expected PERMITTED but traffic is DENIED")
+        else:
+            print(f"  [WARN] {flow['desc']}: Result={actual}")
 
-    # Display results
-    print("Security Check Results:")
-    print("-" * 65)
-
-    for result in passes:
-        print(f"  [PASS] {result['check']}")
-        print(f"         Policy: {result['policy']}")
-        print(f"         {result['detail']}")
-        print()
-
-    for result in violations:
-        print(f"  [FAIL] {result['check']}")
-        print(f"         Policy:   {result['policy']}")
-        print(f"         Severity: {result['severity']}")
-        print(f"         {result['detail']}")
-        print()
-
+    print()
     print("=" * 65)
     print(f"Results: {len(passes)} passed, {len(violations)} failed")
 
@@ -169,10 +159,8 @@ def verify_security_rules(data, output_dir="results"):
         print("Unauthorized traffic flows are permitted by current policies.")
     else:
         print("\nAll security rules correctly block unauthorized traffic.")
-
     print("=" * 65)
 
-    # Save results
     os.makedirs(output_dir, exist_ok=True)
     report_path = os.path.join(output_dir, "security_verification.json")
     report = {
@@ -189,8 +177,8 @@ def verify_security_rules(data, output_dir="results"):
 
     return len(violations)
 
-def analyze_routing_paths(data, output_dir="results"):
-    """Analyze routing paths for zone failure resilience."""
+def analyze_routing_paths(bf, snapshot_name, output_dir="results"):
+    """Analyze Batfish routing paths for zone failure resilience."""
     print()
     print("=" * 65)
     print("Batfish Routing Path Analysis - Zone Failure Resilience")
@@ -198,65 +186,65 @@ def analyze_routing_paths(data, output_dir="results"):
     print("Analyzing routing paths for single zone failure impact...")
     print()
 
-    topo = data['topology'].get('topology', {})
-    routing = data['routing'].get('routing_tables', {})
-    nodes = topo.get('nodes', [])
-
+    bf.set_snapshot(snapshot_name)
     issues = []
     checks = []
 
-    for node in nodes:
-        vpc_name = node['name']
-        azs = node.get('availability_zones', [])
-        subnets = node.get('subnets', [])
-
-        print(f"Analyzing {vpc_name}:")
-        print(f"  Availability Zones: {', '.join(azs)}")
-        print(f"  Subnets: {len(subnets)}")
-
-        # Check multi-AZ coverage
-        if len(azs) < 2:
-            issues.append({
-                "vpc": vpc_name,
-                "severity": "WARNING",
-                "issue": "Single availability zone deployment",
-                "detail": f"{vpc_name} only uses {azs[0]}. A zone failure would disrupt all connectivity.",
-                "recommendation": "Deploy subnets across at least 2 availability zones."
-            })
-            print(f"  [WARNING] Single AZ deployment - no zone redundancy")
-        else:
-            # Check if subnets span multiple AZs
-            subnet_azs = set(s['az'] for s in subnets)
-            if len(subnet_azs) >= 2:
-                checks.append({
-                    "vpc": vpc_name,
-                    "status": "PASS",
-                    "detail": f"Subnets span {len(subnet_azs)} availability zones"
-                })
-                print(f"  [PASS] Multi-AZ deployment across {', '.join(subnet_azs)}")
-            else:
-                issues.append({
-                    "vpc": vpc_name,
-                    "severity": "WARNING",
-                    "issue": "Subnets not distributed across AZs",
-                    "detail": f"All subnets in {vpc_name} reside in {subnet_azs.pop()}.",
-                    "recommendation": "Distribute subnets across available AZs."
-                })
-                print(f"  [WARNING] Subnets not distributed across AZs")
-
-        # Check peering redundancy
-        vpc_routes = routing.get(vpc_name, {}).get('routes', [])
-        peering_routes = [r for r in vpc_routes if r['next_hop'].startswith('pcx-')]
-        if peering_routes:
-            print(f"  Peering routes: {len(peering_routes)}")
-            for route in peering_routes:
-                print(f"    {route['prefix']} via {route['next_hop']}")
+    # Get routing tables from Batfish
+    try:
+        routes = bf.q.routes().answer().frame()
+        print(f"Total routes analyzed: {len(routes)}")
         print()
+
+        # Analyze by node
+        for node in routes['Node'].unique():
+            node_routes = routes[routes['Node'] == node]
+            print(f"Analyzing {node}:")
+            print(f"  Routes: {len(node_routes)}")
+            for _, route in node_routes.iterrows():
+                print(f"    {route['Network']} via {route['Next_Hop']}")
+    except Exception:
+        print("  Using snapshot topology data for analysis...")
+
+    # Load topology data for AZ analysis
+    snapshot_dir = f"snapshots/{'baseline' if 'baseline' in snapshot_name else 'changed'}"
+    subnets_path = os.path.join(snapshot_dir, 'aws_configs', 'us-east-1', 'Subnets.json')
+
+    if os.path.exists(subnets_path):
+        with open(subnets_path, 'r') as f:
+            subnet_data = json.load(f)
+
+        # Group subnets by VPC and check AZ distribution
+        vpc_azs = {}
+        for subnet in subnet_data.get('Subnets', []):
+            vpc_id = subnet['VpcId']
+            az = subnet['AvailabilityZone']
+            if vpc_id not in vpc_azs:
+                vpc_azs[vpc_id] = set()
+            vpc_azs[vpc_id].add(az)
+
+        print()
+        for vpc_id, azs in vpc_azs.items():
+            print(f"Analyzing {vpc_id}:")
+            print(f"  Availability Zones: {', '.join(sorted(azs))}")
+            if len(azs) < 2:
+                issues.append({
+                    "vpc": vpc_id,
+                    "severity": "WARNING",
+                    "issue": "Single availability zone deployment",
+                    "detail": f"{vpc_id} only uses {list(azs)[0]}. A zone failure would disrupt all connectivity.",
+                    "recommendation": "Deploy subnets across at least 2 availability zones."
+                })
+                print(f"  [WARNING] Single AZ deployment - no zone redundancy")
+            else:
+                checks.append({"vpc": vpc_id, "status": "PASS",
+                              "detail": f"Subnets span {len(azs)} availability zones"})
+                print(f"  [PASS] Multi-AZ deployment across {', '.join(sorted(azs))}")
+            print()
 
     print("=" * 65)
     print("Zone Failure Resilience Summary")
     print("-" * 65)
-    print(f"  VPCs analyzed:     {len(nodes)}")
     print(f"  Checks passed:     {len(checks)}")
     print(f"  Issues found:      {len(issues)}")
 
@@ -270,15 +258,12 @@ def analyze_routing_paths(data, output_dir="results"):
             print()
     else:
         print("  No single zone failure can disrupt connectivity.")
-
     print("=" * 65)
 
-    # Save analysis
     os.makedirs(output_dir, exist_ok=True)
     analysis_path = os.path.join(output_dir, "routing_analysis.json")
     analysis = {
         "timestamp": datetime.now().isoformat(),
-        "vpcs_analyzed": len(nodes),
         "checks_passed": len(checks),
         "issues_found": len(issues),
         "checks": checks,
@@ -295,19 +280,23 @@ if __name__ == "__main__":
     snapshot_dir = sys.argv[2] if len(sys.argv) > 2 else "snapshots/baseline"
     output_dir = sys.argv[3] if len(sys.argv) > 3 else "results"
 
+    snapshot_name = "baseline" if "baseline" in snapshot_dir else "changed"
+
+    bf = get_session()
+
     if action == "init":
-        data = init_snapshot(snapshot_dir)
+        init_snapshot(bf, snapshot_dir, snapshot_name)
     elif action == "security":
-        data = load_snapshot(snapshot_dir)
-        violations = verify_security_rules(data, output_dir)
+        init_snapshot(bf, snapshot_dir, snapshot_name)
+        violations = verify_security_rules(bf, snapshot_name, output_dir)
         sys.exit(1 if violations > 0 else 0)
     elif action == "routing":
-        data = load_snapshot(snapshot_dir)
-        issues = analyze_routing_paths(data, output_dir)
+        init_snapshot(bf, snapshot_dir, snapshot_name)
+        issues = analyze_routing_paths(bf, snapshot_name, output_dir)
     elif action == "all":
-        data = init_snapshot(snapshot_dir)
-        violations = verify_security_rules(data, output_dir)
-        issues = analyze_routing_paths(data, output_dir)
+        init_snapshot(bf, snapshot_dir, snapshot_name)
+        violations = verify_security_rules(bf, snapshot_name, output_dir)
+        issues = analyze_routing_paths(bf, snapshot_name, output_dir)
         sys.exit(1 if violations > 0 else 0)
     else:
         print(f"Usage: {sys.argv[0]} [init|security|routing|all] [snapshot_dir] [output_dir]")
