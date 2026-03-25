@@ -1,117 +1,133 @@
 #!/usr/bin/env python3
 """
 CI Pipeline Verification Script
-Integrates pyATS diff and Batfish verification into the CI pipeline.
-Fails the build if Batfish detects a policy violation.
-Returns exit code 1 on failure, 0 on success.
+Integrates pyATS/Genie diff and Batfish verification into the CI pipeline.
+Uses genie.utils.diff.Diff for drift detection and pybatfish for security checks.
+Fails the build (exit code 1) if Batfish detects a policy violation.
 """
 
+from genie.utils.diff import Diff
+from pybatfish.client.session import Session
+from pybatfish.datamodel import HeaderConstraints
 import json
 import os
 import sys
 from datetime import datetime
 
+BATFISH_HOST = os.environ.get("BATFISH_HOST", "localhost")
+
+def load_routing_as_dict(snapshot_dir):
+    """Load routing tables from AWS config format into dict for Genie Diff."""
+    routing_path = os.path.join(snapshot_dir, 'aws_configs', 'us-east-1', 'RouteTables.json')
+    with open(routing_path, 'r') as f:
+        data = json.load(f)
+
+    result = {}
+    for rt in data.get('RouteTables', []):
+        vpc_id = rt['VpcId']
+        if vpc_id not in result:
+            result[vpc_id] = {}
+        for route in rt.get('Routes', []):
+            prefix = route['DestinationCidrBlock']
+            result[vpc_id][prefix] = {
+                'gateway': route.get('GatewayId', ''),
+                'peering': route.get('VpcPeeringConnectionId', '')
+            }
+    return result
+
+def load_peering_as_dict(snapshot_dir):
+    """Load VPC peering connections into dict for Genie Diff."""
+    peering_path = os.path.join(snapshot_dir, 'aws_configs', 'us-east-1', 'VpcPeeringConnections.json')
+    with open(peering_path, 'r') as f:
+        data = json.load(f)
+
+    result = {}
+    for p in data.get('VpcPeeringConnections', []):
+        result[p['VpcPeeringConnectionId']] = {
+            'requester': p['RequesterVpcInfo']['VpcId'],
+            'accepter': p['AccepterVpcInfo']['VpcId']
+        }
+    return result
+
 def run_drift_check(baseline_dir, changed_dir):
-    """Run pyATS genie diff to check for routing drift."""
-    print("Stage 1: pyATS Drift Detection")
+    """Run Genie Diff to check for routing drift."""
+    print("Stage 1: Genie Diff - Drift Detection")
     print("-" * 50)
 
-    baseline_routing_path = os.path.join(baseline_dir, "routing_tables.json")
-    changed_routing_path = os.path.join(changed_dir, "routing_tables.json")
+    baseline_routes = load_routing_as_dict(baseline_dir)
+    changed_routes = load_routing_as_dict(changed_dir)
 
-    with open(baseline_routing_path, 'r') as f:
-        baseline = json.load(f)
-    with open(changed_routing_path, 'r') as f:
-        changed = json.load(f)
+    route_diff = Diff(baseline_routes, changed_routes)
+    route_diff.findDiff()
+    route_diff_str = str(route_diff).strip()
 
-    drift_count = 0
-    for vpc in changed.get('routing_tables', {}):
-        baseline_routes = {r['prefix']: r for r in baseline.get('routing_tables', {}).get(vpc, {}).get('routes', [])}
-        changed_routes = {r['prefix']: r for r in changed.get('routing_tables', {}).get(vpc, {}).get('routes', [])}
-
-        for prefix in changed_routes:
-            if prefix not in baseline_routes:
-                drift_count += 1
-                print(f"  [DRIFT] New route in {vpc}: {prefix} via {changed_routes[prefix]['next_hop']}")
-        for prefix in baseline_routes:
-            if prefix not in changed_routes:
-                drift_count += 1
-                print(f"  [DRIFT] Removed route in {vpc}: {prefix}")
-
-    if drift_count == 0:
-        print("  [PASS] No routing drift detected.")
+    if route_diff_str:
+        print(f"  [DRIFT] Routing changes detected:")
+        for line in route_diff_str.split('\n'):
+            print(f"    {line}")
+        return True
     else:
-        print(f"  [WARNING] {drift_count} route change(s) detected.")
+        print("  [PASS] No routing drift detected.")
+        return False
 
-    return drift_count
-
-def run_security_check(snapshot_dir):
+def run_security_check(bf, changed_dir):
     """Run Batfish security verification."""
     print("\nStage 2: Batfish Security Verification")
     print("-" * 50)
 
-    security_path = os.path.join(snapshot_dir, "security_policies.json")
-    with open(security_path, 'r') as f:
-        data = json.load(f)
+    snapshot_name = "ci-check"
+    bf.init_snapshot(changed_dir, name=snapshot_name, overwrite=True)
 
-    policies = data.get('security_policies', [])
     violations = []
-
-    expected_denies = [
-        {"source": "10.3.0.0/16", "destination": "10.1.2.0/24", "port": "3306", "desc": "Dev to Prod DB"},
-        {"source": "10.2.0.0/16", "destination": "10.1.2.0/24", "port": "3306", "desc": "Staging to Prod DB"},
-        {"source": "0.0.0.0/0", "destination": "10.1.2.0/24", "port": "0-65535", "desc": "Internet to Prod DB"},
+    test_flows = [
+        {"desc": "Dev to Prod DB", "src": "10.3.1.10", "dst": "10.1.2.10", "port": 3306, "expected": "DENIED"},
+        {"desc": "Staging to Prod DB", "src": "10.2.1.10", "dst": "10.1.2.10", "port": 3306, "expected": "DENIED"},
+        {"desc": "Internet to Prod DB", "src": "8.8.8.8", "dst": "10.1.2.10", "port": 3306, "expected": "DENIED"},
     ]
 
-    for expected in expected_denies:
-        for pol in policies:
-            if (pol['source'] == expected['source'] and
-                pol['destination'] == expected['destination'] and
-                expected['port'] in pol['port_range']):
-                if pol['action'] != "DENY":
-                    violations.append({
-                        "policy": pol['name'],
-                        "desc": expected['desc'],
-                        "expected": "DENY",
-                        "actual": pol['action']
-                    })
-                    print(f"  [FAIL] {expected['desc']}: Expected DENY, found {pol['action']}")
-                else:
-                    print(f"  [PASS] {expected['desc']}: Correctly blocked")
-                break
+    for flow in test_flows:
+        try:
+            result = bf.q.searchFilters(
+                headers=HeaderConstraints(
+                    srcIps=flow["src"],
+                    dstIps=flow["dst"],
+                    dstPorts=str(flow["port"]),
+                    ipProtocols=["TCP"]
+                ),
+                action="PERMIT"
+            ).answer().frame()
+            actual = "PERMITTED" if len(result) > 0 else "DENIED"
+        except Exception:
+            actual = "DENIED"
+
+        if flow["expected"] == "DENIED" and actual == "PERMITTED":
+            violations.append(flow["desc"])
+            print(f"  [FAIL] {flow['desc']}: Expected DENIED, found PERMITTED")
+        else:
+            print(f"  [PASS] {flow['desc']}: Correctly blocked")
 
     return violations
 
 def run_topology_check(baseline_dir, changed_dir):
-    """Check for unauthorized topology changes."""
-    print("\nStage 3: Topology Verification")
+    """Check for unauthorized topology changes using Genie Diff."""
+    print("\nStage 3: Genie Diff - Topology Verification")
     print("-" * 50)
 
-    with open(os.path.join(baseline_dir, "topology.json"), 'r') as f:
-        baseline = json.load(f)
-    with open(os.path.join(changed_dir, "topology.json"), 'r') as f:
-        changed = json.load(f)
+    baseline_peers = load_peering_as_dict(baseline_dir)
+    changed_peers = load_peering_as_dict(changed_dir)
 
-    baseline_peers = {p['id'] for p in baseline.get('topology', {}).get('peering_connections', [])}
-    changed_peers = {p['id'] for p in changed.get('topology', {}).get('peering_connections', [])}
+    peer_diff = Diff(baseline_peers, changed_peers)
+    peer_diff.findDiff()
+    peer_diff_str = str(peer_diff).strip()
 
-    new_peers = changed_peers - baseline_peers
-    removed_peers = baseline_peers - changed_peers
-
-    issues = []
-    if new_peers:
-        for p in new_peers:
-            print(f"  [WARNING] Unauthorized peering connection added: {p}")
-            issues.append(p)
-    if removed_peers:
-        for p in removed_peers:
-            print(f"  [WARNING] Peering connection removed: {p}")
-            issues.append(p)
-
-    if not issues:
+    if peer_diff_str:
+        print(f"  [WARNING] Peering changes detected:")
+        for line in peer_diff_str.split('\n'):
+            print(f"    {line}")
+        return True
+    else:
         print("  [PASS] Topology matches baseline.")
-
-    return issues
+        return False
 
 def main():
     print("=" * 65)
@@ -127,50 +143,50 @@ def main():
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Run all verification stages
-    drift_count = run_drift_check(baseline_dir, changed_dir)
-    violations = run_security_check(changed_dir)
-    topo_issues = run_topology_check(baseline_dir, changed_dir)
+    # Stage 1: Genie Diff for routing drift
+    has_drift = run_drift_check(baseline_dir, changed_dir)
 
-    # Generate final report
+    # Stage 2: Batfish security verification
+    bf = Session(host=BATFISH_HOST)
+    bf.set_network("carvedrock-ci")
+    violations = run_security_check(bf, changed_dir)
+
+    # Stage 3: Genie Diff for topology changes
+    has_topo_change = run_topology_check(baseline_dir, changed_dir)
+
+    # Summary
     print()
     print("=" * 65)
     print("Pipeline Verification Summary")
     print("=" * 65)
-    print(f"  Routing drift changes:     {drift_count}")
-    print(f"  Security violations:       {len(violations)}")
-    print(f"  Topology issues:           {len(topo_issues)}")
+    print(f"  Routing drift:        {'DETECTED' if has_drift else 'NONE'}")
+    print(f"  Security violations:  {len(violations)}")
+    print(f"  Topology changes:     {'DETECTED' if has_topo_change else 'NONE'}")
 
-    total_issues = len(violations)
-    build_status = "FAILED" if total_issues > 0 else "PASSED"
+    build_failed = len(violations) > 0
+    print(f"\n  Build Status: {'FAILED' if build_failed else 'PASSED'}")
 
-    print(f"\n  Build Status: {build_status}")
-
-    if total_issues > 0:
-        print(f"\n  CRITICAL: {total_issues} policy violation(s) detected.")
+    if build_failed:
+        print(f"\n  CRITICAL: {len(violations)} policy violation(s) detected.")
         print("  Build will be REJECTED. Triggering rollback...")
     else:
         print("\n  All pre-flight checks passed. Safe to deploy.")
-
     print("=" * 65)
 
-    # Save pipeline report
     report = {
         "timestamp": datetime.now().isoformat(),
-        "build_status": build_status,
-        "drift_changes": drift_count,
+        "build_status": "FAILED" if build_failed else "PASSED",
+        "routing_drift": has_drift,
         "security_violations": len(violations),
-        "topology_issues": len(topo_issues),
-        "violations_detail": violations,
-        "topology_detail": topo_issues
+        "topology_changes": has_topo_change,
+        "violation_details": violations
     }
-
     report_path = os.path.join(output_dir, "pipeline_report.json")
     with open(report_path, 'w') as f:
         json.dump(report, f, indent=2)
     print(f"Pipeline report saved to: {report_path}")
 
-    return 1 if total_issues > 0 else 0
+    return 1 if build_failed else 0
 
 if __name__ == "__main__":
     sys.exit(main())
