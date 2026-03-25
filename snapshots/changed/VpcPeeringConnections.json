@@ -1,0 +1,22 @@
+{
+  "VpcPeeringConnections": [
+    {
+      "VpcPeeringConnectionId": "pcx-prod-staging-001",
+      "RequesterVpcInfo": {"VpcId": "vpc-prod-0a1b2c3d", "OwnerId": "123456789012", "CidrBlock": "10.1.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.1.0.0/16"}], "Region": "us-east-1"},
+      "AccepterVpcInfo": {"VpcId": "vpc-staging-4e5f6g7h", "OwnerId": "123456789012", "CidrBlock": "10.2.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.2.0.0/16"}], "Region": "us-east-1"},
+      "Status": {"Code": "active", "Message": "Active"}, "Tags": []
+    },
+    {
+      "VpcPeeringConnectionId": "pcx-prod-dev-002",
+      "RequesterVpcInfo": {"VpcId": "vpc-prod-0a1b2c3d", "OwnerId": "123456789012", "CidrBlock": "10.1.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.1.0.0/16"}], "Region": "us-east-1"},
+      "AccepterVpcInfo": {"VpcId": "vpc-dev-8i9j0k1l", "OwnerId": "123456789012", "CidrBlock": "10.3.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.3.0.0/16"}], "Region": "us-east-1"},
+      "Status": {"Code": "active", "Message": "Active"}, "Tags": []
+    },
+    {
+      "VpcPeeringConnectionId": "pcx-staging-dev-003",
+      "RequesterVpcInfo": {"VpcId": "vpc-staging-4e5f6g7h", "OwnerId": "123456789012", "CidrBlock": "10.2.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.2.0.0/16"}], "Region": "us-east-1"},
+      "AccepterVpcInfo": {"VpcId": "vpc-dev-8i9j0k1l", "OwnerId": "123456789012", "CidrBlock": "10.3.0.0/16", "CidrBlockSet": [{"CidrBlock": "10.3.0.0/16"}], "Region": "us-east-1"},
+      "Status": {"Code": "active", "Message": "Active"}, "Tags": []
+    }
+  ]
+}
