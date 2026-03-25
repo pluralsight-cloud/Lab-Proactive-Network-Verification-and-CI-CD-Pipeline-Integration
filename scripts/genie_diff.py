@@ -1,102 +1,53 @@
 #!/usr/bin/env python3
 """
 Genie Diff - Detect VPC Routing Drift
-Compares baseline and current routing state to identify
-unintended configuration changes across VPCs.
+Uses genie.utils.diff.Diff to compare baseline and current routing state,
+identifying unintended configuration changes across VPCs.
 """
 
+from genie.utils.diff import Diff
 import json
 import os
 import sys
 from datetime import datetime
 
-def load_snapshot(snapshot_dir):
-    """Load routing table snapshot from JSON."""
-    routing_path = os.path.join(snapshot_dir, "routing_tables.json")
-    topology_path = os.path.join(snapshot_dir, "topology.json")
-
+def load_routing_as_dict(snapshot_dir):
+    """Load routing tables and convert to dict keyed by prefix for Genie Diff."""
+    routing_path = os.path.join(snapshot_dir, 'aws_configs', 'us-east-1', 'RouteTables.json')
     with open(routing_path, 'r') as f:
-        routing = json.load(f)
-    with open(topology_path, 'r') as f:
-        topology = json.load(f)
+        data = json.load(f)
 
-    return routing, topology
+    result = {}
+    for rt in data.get('RouteTables', []):
+        vpc_id = rt['VpcId']
+        rt_id = rt['RouteTableId']
+        if vpc_id not in result:
+            result[vpc_id] = {}
+        for route in rt.get('Routes', []):
+            prefix = route['DestinationCidrBlock']
+            result[vpc_id][prefix] = {
+                'route_table': rt_id,
+                'state': route.get('State', 'N/A'),
+                'gateway': route.get('GatewayId', ''),
+                'peering': route.get('VpcPeeringConnectionId', '')
+            }
+    return result
 
-def diff_routing_tables(baseline_routing, changed_routing):
-    """Compare routing tables between baseline and changed state."""
-    diffs = []
+def load_peering_as_dict(snapshot_dir):
+    """Load VPC peering connections as dict keyed by peering ID."""
+    peering_path = os.path.join(snapshot_dir, 'aws_configs', 'us-east-1', 'VpcPeeringConnections.json')
+    with open(peering_path, 'r') as f:
+        data = json.load(f)
 
-    baseline_tables = baseline_routing.get('routing_tables', {})
-    changed_tables = changed_routing.get('routing_tables', {})
-
-    all_vpcs = set(list(baseline_tables.keys()) + list(changed_tables.keys()))
-
-    for vpc in sorted(all_vpcs):
-        baseline_routes = {r['prefix']: r for r in baseline_tables.get(vpc, {}).get('routes', [])}
-        changed_routes = {r['prefix']: r for r in changed_tables.get(vpc, {}).get('routes', [])}
-
-        # Check for added routes
-        for prefix in changed_routes:
-            if prefix not in baseline_routes:
-                diffs.append({
-                    "type": "ADDED",
-                    "vpc": vpc,
-                    "prefix": prefix,
-                    "details": changed_routes[prefix]
-                })
-
-        # Check for removed routes
-        for prefix in baseline_routes:
-            if prefix not in changed_routes:
-                diffs.append({
-                    "type": "REMOVED",
-                    "vpc": vpc,
-                    "prefix": prefix,
-                    "details": baseline_routes[prefix]
-                })
-
-        # Check for modified routes
-        for prefix in baseline_routes:
-            if prefix in changed_routes:
-                if baseline_routes[prefix] != changed_routes[prefix]:
-                    diffs.append({
-                        "type": "MODIFIED",
-                        "vpc": vpc,
-                        "prefix": prefix,
-                        "baseline": baseline_routes[prefix],
-                        "current": changed_routes[prefix]
-                    })
-
-    return diffs
-
-def diff_topology(baseline_topo, changed_topo):
-    """Compare topology between baseline and changed state."""
-    diffs = []
-
-    baseline_peers = {p['id']: p for p in baseline_topo.get('topology', {}).get('peering_connections', [])}
-    changed_peers = {p['id']: p for p in changed_topo.get('topology', {}).get('peering_connections', [])}
-
-    for peer_id in changed_peers:
-        if peer_id not in baseline_peers:
-            p = changed_peers[peer_id]
-            diffs.append({
-                "type": "ADDED_PEERING",
-                "peering_id": peer_id,
-                "requester": p['requester'],
-                "accepter": p['accepter']
-            })
-
-    for peer_id in baseline_peers:
-        if peer_id not in changed_peers:
-            p = baseline_peers[peer_id]
-            diffs.append({
-                "type": "REMOVED_PEERING",
-                "peering_id": peer_id,
-                "requester": p['requester'],
-                "accepter": p['accepter']
-            })
-
-    return diffs
+    result = {}
+    for p in data.get('VpcPeeringConnections', []):
+        pid = p['VpcPeeringConnectionId']
+        result[pid] = {
+            'requester': p['RequesterVpcInfo']['VpcId'],
+            'accepter': p['AccepterVpcInfo']['VpcId'],
+            'status': p['Status']['Code']
+        }
+    return result
 
 def main(baseline_dir, changed_dir, output_dir="results"):
     print("=" * 65)
@@ -107,97 +58,75 @@ def main(baseline_dir, changed_dir, output_dir="results"):
     print(f"Current:      {changed_dir}")
     print()
 
-    baseline_routing, baseline_topo = load_snapshot(baseline_dir)
-    changed_routing, changed_topo = load_snapshot(changed_dir)
+    # Load and diff routing tables using Genie Diff
+    print("Comparing routing tables using Genie Diff...")
+    baseline_routes = load_routing_as_dict(baseline_dir)
+    changed_routes = load_routing_as_dict(changed_dir)
 
-    print("Comparing routing tables...")
-    route_diffs = diff_routing_tables(baseline_routing, changed_routing)
+    route_diff = Diff(baseline_routes, changed_routes)
+    route_diff.findDiff()
+    route_diff_str = str(route_diff)
 
-    print("Comparing topology...")
-    topo_diffs = diff_topology(baseline_topo, changed_topo)
+    # Load and diff peering connections using Genie Diff
+    print("Comparing peering connections using Genie Diff...")
+    baseline_peering = load_peering_as_dict(baseline_dir)
+    changed_peering = load_peering_as_dict(changed_dir)
 
-    all_diffs = route_diffs + topo_diffs
+    peering_diff = Diff(baseline_peering, changed_peering)
+    peering_diff.findDiff()
+    peering_diff_str = str(peering_diff)
 
     print()
     print("=" * 65)
     print("Diff Results")
     print("=" * 65)
 
-    if not all_diffs:
+    has_route_diff = bool(route_diff_str.strip())
+    has_peering_diff = bool(peering_diff_str.strip())
+
+    if not has_route_diff and not has_peering_diff:
         print("No differences detected. Configurations match baseline.")
     else:
-        print(f"Total differences found: {len(all_diffs)}")
-        print()
+        if has_route_diff:
+            print("\nRouting Table Changes (Genie Diff output):")
+            print("-" * 65)
+            print(route_diff_str)
 
-        for i, diff in enumerate(all_diffs, 1):
-            diff_type = diff['type']
-
-            if diff_type == "ADDED":
-                print(f"  [{i}] ROUTE ADDED in {diff['vpc']}")
-                print(f"      Prefix:   {diff['prefix']}")
-                print(f"      Next Hop: {diff['details']['next_hop']}")
-                print(f"      Protocol: {diff['details']['protocol']}")
-                print(f"      Metric:   {diff['details']['metric']}")
-                print()
-
-            elif diff_type == "REMOVED":
-                print(f"  [{i}] ROUTE REMOVED from {diff['vpc']}")
-                print(f"      Prefix:   {diff['prefix']}")
-                print(f"      Next Hop: {diff['details']['next_hop']}")
-                print()
-
-            elif diff_type == "MODIFIED":
-                print(f"  [{i}] ROUTE MODIFIED in {diff['vpc']}")
-                print(f"      Prefix:   {diff['prefix']}")
-                print(f"      Baseline: next_hop={diff['baseline']['next_hop']}, metric={diff['baseline']['metric']}")
-                print(f"      Current:  next_hop={diff['current']['next_hop']}, metric={diff['current']['metric']}")
-                print()
-
-            elif diff_type == "ADDED_PEERING":
-                print(f"  [{i}] PEERING CONNECTION ADDED")
-                print(f"      Peering ID: {diff['peering_id']}")
-                print(f"      Requester:  {diff['requester']}")
-                print(f"      Accepter:   {diff['accepter']}")
-                print()
-
-            elif diff_type == "REMOVED_PEERING":
-                print(f"  [{i}] PEERING CONNECTION REMOVED")
-                print(f"      Peering ID: {diff['peering_id']}")
-                print(f"      Requester:  {diff['requester']}")
-                print(f"      Accepter:   {diff['accepter']}")
-                print()
+        if has_peering_diff:
+            print("\nPeering Connection Changes (Genie Diff output):")
+            print("-" * 65)
+            print(peering_diff_str)
 
     # Save diff results
     os.makedirs(output_dir, exist_ok=True)
     diff_path = os.path.join(output_dir, "drift_report.json")
-    diff_report = {
+    report = {
         "timestamp": datetime.now().isoformat(),
         "baseline_snapshot": baseline_dir,
         "current_snapshot": changed_dir,
-        "total_differences": len(all_diffs),
-        "route_changes": len(route_diffs),
-        "topology_changes": len(topo_diffs),
-        "differences": all_diffs
+        "has_routing_drift": has_route_diff,
+        "has_peering_drift": has_peering_diff,
+        "routing_diff": route_diff_str,
+        "peering_diff": peering_diff_str
     }
-
     with open(diff_path, 'w') as f:
-        json.dump(diff_report, f, indent=2)
+        json.dump(report, f, indent=2)
 
     print("-" * 65)
     print(f"Drift report saved to: {diff_path}")
 
-    if all_diffs:
-        print(f"\nWARNING: {len(all_diffs)} unintended change(s) detected.")
+    if has_route_diff or has_peering_diff:
+        print(f"\nWARNING: Configuration drift detected.")
         print("Review the drift report and take corrective action.")
     else:
         print("\nNo drift detected. Environment matches baseline.")
 
     print("=" * 65)
-    return len(all_diffs)
+    return 1 if (has_route_diff or has_peering_diff) else 0
 
 if __name__ == "__main__":
     baseline = sys.argv[1] if len(sys.argv) > 1 else "snapshots/baseline"
     changed = sys.argv[2] if len(sys.argv) > 2 else "snapshots/changed"
     output = sys.argv[3] if len(sys.argv) > 3 else "results"
     exit_code = main(baseline, changed, output)
-    sys.exit(1 if exit_code > 0 else 0)
+    sys.exit(exit_code)
