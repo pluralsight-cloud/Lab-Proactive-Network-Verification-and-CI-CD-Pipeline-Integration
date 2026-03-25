@@ -1,0 +1,45 @@
+{
+  "vpc_id": "vpc-staging-4e5f6g7h",
+  "vpc_name": "CarvedRock-Staging",
+  "region": "us-east-1",
+  "cidr_block": "10.2.0.0/16",
+  "route_tables": [
+    {
+      "route_table_id": "rtb-stg-main-001",
+      "name": "staging-main-rt",
+      "subnet_association": "subnet-stg-app-1a",
+      "routes": [
+        {
+          "destination": "10.2.0.0/16",
+          "target": "local",
+          "status": "active"
+        },
+        {
+          "destination": "10.1.0.0/16",
+          "target": "pcx-prod-staging-001",
+          "status": "active"
+        },
+        {
+          "destination": "0.0.0.0/0",
+          "target": "igw-stg-001",
+          "status": "active"
+        }
+      ]
+    }
+  ],
+  "security_groups": [
+    {
+      "group_id": "sg-stg-web-001",
+      "name": "staging-web-sg",
+      "description": "Staging web tier security group",
+      "inbound_rules": [
+        {"protocol": "tcp", "port_range": "443", "source": "10.0.0.0/8", "description": "HTTPS from internal"},
+        {"protocol": "tcp", "port_range": "8080", "source": "10.0.0.0/8", "description": "App port from internal"}
+      ],
+      "outbound_rules": [
+        {"protocol": "tcp", "port_range": "3306", "destination": "10.2.2.0/24", "description": "MySQL to DB subnet"},
+        {"protocol": "tcp", "port_range": "443", "destination": "0.0.0.0/0", "description": "HTTPS outbound"}
+      ]
+    }
+  ]
+}

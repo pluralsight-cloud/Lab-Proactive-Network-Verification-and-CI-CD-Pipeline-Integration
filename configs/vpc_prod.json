@@ -1,0 +1,76 @@
+{
+  "vpc_id": "vpc-prod-0a1b2c3d",
+  "vpc_name": "CarvedRock-Production",
+  "region": "us-east-1",
+  "cidr_block": "10.1.0.0/16",
+  "route_tables": [
+    {
+      "route_table_id": "rtb-prod-main-001",
+      "name": "prod-main-rt",
+      "subnet_association": "subnet-prod-app-1a",
+      "routes": [
+        {
+          "destination": "10.1.0.0/16",
+          "target": "local",
+          "status": "active"
+        },
+        {
+          "destination": "10.2.0.0/16",
+          "target": "pcx-prod-staging-001",
+          "status": "active"
+        },
+        {
+          "destination": "10.3.0.0/16",
+          "target": "pcx-prod-dev-002",
+          "status": "active"
+        },
+        {
+          "destination": "0.0.0.0/0",
+          "target": "igw-prod-001",
+          "status": "active"
+        }
+      ]
+    },
+    {
+      "route_table_id": "rtb-prod-db-001",
+      "name": "prod-db-rt",
+      "subnet_association": "subnet-prod-db-1b",
+      "routes": [
+        {
+          "destination": "10.1.0.0/16",
+          "target": "local",
+          "status": "active"
+        },
+        {
+          "destination": "10.2.0.0/16",
+          "target": "pcx-prod-staging-001",
+          "status": "active"
+        }
+      ]
+    }
+  ],
+  "security_groups": [
+    {
+      "group_id": "sg-prod-web-001",
+      "name": "prod-web-sg",
+      "description": "Production web tier security group",
+      "inbound_rules": [
+        {"protocol": "tcp", "port_range": "443", "source": "0.0.0.0/0", "description": "HTTPS from internet"},
+        {"protocol": "tcp", "port_range": "80", "source": "0.0.0.0/0", "description": "HTTP from internet"}
+      ],
+      "outbound_rules": [
+        {"protocol": "tcp", "port_range": "3306", "destination": "10.1.2.0/24", "description": "MySQL to DB subnet"},
+        {"protocol": "tcp", "port_range": "443", "destination": "0.0.0.0/0", "description": "HTTPS outbound"}
+      ]
+    },
+    {
+      "group_id": "sg-prod-db-001",
+      "name": "prod-db-sg",
+      "description": "Production database security group",
+      "inbound_rules": [
+        {"protocol": "tcp", "port_range": "3306", "source": "10.1.1.0/24", "description": "MySQL from app subnet"}
+      ],
+      "outbound_rules": []
+    }
+  ]
+}
