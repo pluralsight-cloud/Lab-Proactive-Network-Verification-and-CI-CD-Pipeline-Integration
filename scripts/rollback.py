@@ -2,8 +2,7 @@
 """
 Automated Rollback Script
 Restores the baseline cloud state when verification fails.
-Copies baseline snapshot files over changed configurations
-and generates a rollback confirmation report.
+Copies baseline AWS config files over changed configurations.
 """
 
 import json
@@ -26,18 +25,18 @@ def rollback_to_baseline(baseline_dir, changed_dir, output_dir="results"):
         print(f"ERROR: Baseline directory not found: {baseline_dir}")
         sys.exit(1)
 
-    # Record what will be rolled back
     rolled_back_files = []
 
     print("Rolling back configuration files:")
     print("-" * 65)
 
-    for filename in os.listdir(baseline_dir):
-        src = os.path.join(baseline_dir, filename)
-        dst = os.path.join(changed_dir, filename)
+    for root, dirs, files in os.walk(baseline_dir):
+        for filename in files:
+            src = os.path.join(root, filename)
+            rel_path = os.path.relpath(src, baseline_dir)
+            dst = os.path.join(changed_dir, rel_path)
 
-        if os.path.isfile(src):
-            # Check if file differs
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
             if os.path.exists(dst):
                 with open(src, 'r') as f:
                     src_content = f.read()
@@ -46,22 +45,20 @@ def rollback_to_baseline(baseline_dir, changed_dir, output_dir="results"):
 
                 if src_content != dst_content:
                     shutil.copy2(src, dst)
-                    rolled_back_files.append(filename)
-                    print(f"  [RESTORED] {filename}")
+                    rolled_back_files.append(rel_path)
+                    print(f"  [RESTORED] {rel_path}")
                 else:
-                    print(f"  [UNCHANGED] {filename} (already matches baseline)")
+                    print(f"  [UNCHANGED] {rel_path}")
             else:
                 shutil.copy2(src, dst)
-                rolled_back_files.append(filename)
-                print(f"  [RESTORED] {filename}")
+                rolled_back_files.append(rel_path)
+                print(f"  [RESTORED] {rel_path}")
 
     print()
     print("=" * 65)
     print("Rollback Summary")
     print("-" * 65)
     print(f"  Files restored:    {len(rolled_back_files)}")
-    print(f"  Baseline source:   {baseline_dir}")
-    print(f"  Rollback target:   {changed_dir}")
 
     if rolled_back_files:
         print(f"\n  Restored files:")
@@ -74,21 +71,17 @@ def rollback_to_baseline(baseline_dir, changed_dir, output_dir="results"):
     print("Rollback COMPLETE. Environment restored to baseline state.")
     print("=" * 65)
 
-    # Save rollback report
     os.makedirs(output_dir, exist_ok=True)
     report_path = os.path.join(output_dir, "rollback_report.json")
     report = {
         "timestamp": datetime.now().isoformat(),
         "status": "COMPLETED",
         "files_restored": rolled_back_files,
-        "total_restored": len(rolled_back_files),
-        "baseline_source": baseline_dir,
-        "rollback_target": changed_dir
+        "total_restored": len(rolled_back_files)
     }
     with open(report_path, 'w') as f:
         json.dump(report, f, indent=2)
     print(f"Rollback report saved to: {report_path}")
-
     return 0
 
 if __name__ == "__main__":
