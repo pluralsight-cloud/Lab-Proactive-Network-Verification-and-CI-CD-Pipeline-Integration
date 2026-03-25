@@ -1,0 +1,59 @@
+{
+  "SecurityGroups": [
+    {
+      "GroupId": "sg-prod-web-001",
+      "GroupName": "prod-web-sg",
+      "Description": "Production web tier security group",
+      "VpcId": "vpc-prod-0a1b2c3d",
+      "IpPermissions": [
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS from internet"}]},
+        {"IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTP from internet"}]}
+      ],
+      "IpPermissionsEgress": [
+        {"IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306, "IpRanges": [{"CidrIp": "10.1.2.0/24", "Description": "MySQL to DB subnet"}]},
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS outbound"}]}
+      ],
+      "Tags": [{"Key": "Name", "Value": "prod-web-sg"}]
+    },
+    {
+      "GroupId": "sg-prod-db-001",
+      "GroupName": "prod-db-sg",
+      "Description": "Production database security group",
+      "VpcId": "vpc-prod-0a1b2c3d",
+      "IpPermissions": [
+        {"IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306, "IpRanges": [{"CidrIp": "10.1.1.0/24", "Description": "MySQL from app subnet only"}]}
+      ],
+      "IpPermissionsEgress": [],
+      "Tags": [{"Key": "Name", "Value": "prod-db-sg"}]
+    },
+    {
+      "GroupId": "sg-stg-web-001",
+      "GroupName": "staging-web-sg",
+      "Description": "Staging web tier security group",
+      "VpcId": "vpc-staging-4e5f6g7h",
+      "IpPermissions": [
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "10.0.0.0/8", "Description": "HTTPS from internal"}]},
+        {"IpProtocol": "tcp", "FromPort": 8080, "ToPort": 8080, "IpRanges": [{"CidrIp": "10.0.0.0/8", "Description": "App port from internal"}]}
+      ],
+      "IpPermissionsEgress": [
+        {"IpProtocol": "tcp", "FromPort": 3306, "ToPort": 3306, "IpRanges": [{"CidrIp": "10.2.2.0/24", "Description": "MySQL to DB subnet"}]},
+        {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "HTTPS outbound"}]}
+      ],
+      "Tags": [{"Key": "Name", "Value": "staging-web-sg"}]
+    },
+    {
+      "GroupId": "sg-dev-web-001",
+      "GroupName": "dev-web-sg",
+      "Description": "Dev web tier security group",
+      "VpcId": "vpc-dev-8i9j0k1l",
+      "IpPermissions": [
+        {"IpProtocol": "tcp", "FromPort": 0, "ToPort": 65535, "IpRanges": [{"CidrIp": "10.3.0.0/16", "Description": "All from dev VPC"}]},
+        {"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "10.1.0.0/16", "Description": "SSH from prod"}]}
+      ],
+      "IpPermissionsEgress": [
+        {"IpProtocol": "-1", "IpRanges": [{"CidrIp": "0.0.0.0/0", "Description": "All outbound"}]}
+      ],
+      "Tags": [{"Key": "Name", "Value": "dev-web-sg"}]
+    }
+  ]
+}
