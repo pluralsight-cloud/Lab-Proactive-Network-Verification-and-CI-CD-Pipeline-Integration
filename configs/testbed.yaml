@@ -59,20 +59,3 @@ devices:
       region: us-east-1
       availability_zones:
         - us-east-1a
-
-topology:
-  links:
-    prod-to-staging:
-      type: peering
-      interfaces:
-        vpc-router-prod:
-          interface: peering0
-        vpc-router-staging:
-          interface: peering0
-    prod-to-dev:
-      type: peering
-      interfaces:
-        vpc-router-prod:
-          interface: peering1
-        vpc-router-dev:
-          interface: peering0
