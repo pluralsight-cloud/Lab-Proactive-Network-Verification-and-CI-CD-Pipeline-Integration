@@ -1,0 +1,160 @@
+{
+  "NetworkInterfaces": [
+    {
+      "NetworkInterfaceId": "eni-prod-app-01",
+      "SubnetId": "subnet-prod-app-1a",
+      "VpcId": "vpc-prod-0a1b2c3d",
+      "AvailabilityZone": "us-east-1a",
+      "Description": "prod-app",
+      "OwnerId": "123456789012",
+      "Status": "in-use",
+      "MacAddress": "02:aa:bb:cc:01:01",
+      "SourceDestCheck": true,
+      "PrivateIpAddress": "10.1.1.10",
+      "PrivateDnsName": "ip-10-1-1-10.ec2.internal",
+      "PrivateIpAddresses": [
+        {
+          "PrivateIpAddress": "10.1.1.10",
+          "PrivateDnsName": "ip-10-1-1-10.ec2.internal",
+          "Primary": true
+        }
+      ],
+      "Ipv6Addresses": [],
+      "TagSet": [],
+      "Groups": [
+        {
+          "GroupId": "sg-prod-web-001",
+          "GroupName": "prod-web-sg"
+        }
+      ],
+      "Attachment": {
+        "AttachmentId": "eni-attach-001",
+        "InstanceId": "i-prod-app-01",
+        "InstanceOwnerId": "123456789012",
+        "DeviceIndex": 0,
+        "Status": "attached",
+        "AttachTime": "2024-01-01T00:00:00.000Z",
+        "DeleteOnTermination": true
+      },
+      "RequesterManaged": false,
+      "InterfaceType": "interface"
+    },
+    {
+      "NetworkInterfaceId": "eni-prod-db-01",
+      "SubnetId": "subnet-prod-db-1b",
+      "VpcId": "vpc-prod-0a1b2c3d",
+      "AvailabilityZone": "us-east-1b",
+      "Description": "prod-db",
+      "OwnerId": "123456789012",
+      "Status": "in-use",
+      "MacAddress": "02:aa:bb:cc:02:01",
+      "SourceDestCheck": true,
+      "PrivateIpAddress": "10.1.2.10",
+      "PrivateDnsName": "ip-10-1-2-10.ec2.internal",
+      "PrivateIpAddresses": [
+        {
+          "PrivateIpAddress": "10.1.2.10",
+          "PrivateDnsName": "ip-10-1-2-10.ec2.internal",
+          "Primary": true
+        }
+      ],
+      "Ipv6Addresses": [],
+      "TagSet": [],
+      "Groups": [
+        {
+          "GroupId": "sg-prod-db-001",
+          "GroupName": "prod-db-sg"
+        }
+      ],
+      "Attachment": {
+        "AttachmentId": "eni-attach-002",
+        "InstanceId": "i-prod-db-01",
+        "InstanceOwnerId": "123456789012",
+        "DeviceIndex": 0,
+        "Status": "attached",
+        "AttachTime": "2024-01-01T00:00:00.000Z",
+        "DeleteOnTermination": true
+      },
+      "RequesterManaged": false,
+      "InterfaceType": "interface"
+    },
+    {
+      "NetworkInterfaceId": "eni-stg-app-01",
+      "SubnetId": "subnet-stg-app-1a",
+      "VpcId": "vpc-staging-4e5f6g7h",
+      "AvailabilityZone": "us-east-1a",
+      "Description": "stg-app",
+      "OwnerId": "123456789012",
+      "Status": "in-use",
+      "MacAddress": "02:aa:bb:cc:03:01",
+      "SourceDestCheck": true,
+      "PrivateIpAddress": "10.2.1.10",
+      "PrivateDnsName": "ip-10-2-1-10.ec2.internal",
+      "PrivateIpAddresses": [
+        {
+          "PrivateIpAddress": "10.2.1.10",
+          "PrivateDnsName": "ip-10-2-1-10.ec2.internal",
+          "Primary": true
+        }
+      ],
+      "Ipv6Addresses": [],
+      "TagSet": [],
+      "Groups": [
+        {
+          "GroupId": "sg-stg-web-001",
+          "GroupName": "staging-web-sg"
+        }
+      ],
+      "Attachment": {
+        "AttachmentId": "eni-attach-003",
+        "InstanceId": "i-stg-app-01",
+        "InstanceOwnerId": "123456789012",
+        "DeviceIndex": 0,
+        "Status": "attached",
+        "AttachTime": "2024-01-01T00:00:00.000Z",
+        "DeleteOnTermination": true
+      },
+      "RequesterManaged": false,
+      "InterfaceType": "interface"
+    },
+    {
+      "NetworkInterfaceId": "eni-dev-app-01",
+      "SubnetId": "subnet-dev-app-1a",
+      "VpcId": "vpc-dev-8i9j0k1l",
+      "AvailabilityZone": "us-east-1a",
+      "Description": "dev-app",
+      "OwnerId": "123456789012",
+      "Status": "in-use",
+      "MacAddress": "02:aa:bb:cc:04:01",
+      "SourceDestCheck": true,
+      "PrivateIpAddress": "10.3.1.10",
+      "PrivateDnsName": "ip-10-3-1-10.ec2.internal",
+      "PrivateIpAddresses": [
+        {
+          "PrivateIpAddress": "10.3.1.10",
+          "PrivateDnsName": "ip-10-3-1-10.ec2.internal",
+          "Primary": true
+        }
+      ],
+      "Ipv6Addresses": [],
+      "TagSet": [],
+      "Groups": [
+        {
+          "GroupId": "sg-dev-web-001",
+          "GroupName": "dev-web-sg"
+        }
+      ],
+      "Attachment": {
+        "AttachmentId": "eni-attach-004",
+        "InstanceId": "i-dev-app-01",
+        "InstanceOwnerId": "123456789012",
+        "DeviceIndex": 0,
+        "Status": "attached",
+        "AttachTime": "2024-01-01T00:00:00.000Z",
+        "DeleteOnTermination": true
+      },
+      "RequesterManaged": false,
+      "InterfaceType": "interface"
+    }
+  ]
+}

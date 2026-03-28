@@ -1,0 +1,118 @@
+{
+  "NetworkAcls": [
+    {
+      "NetworkAclId": "acl-0a1b2c3d",
+      "VpcId": "vpc-prod-0a1b2c3d",
+      "IsDefault": true,
+      "Entries": [
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        }
+      ],
+      "Associations": [],
+      "OwnerId": "123456789012",
+      "Tags": []
+    },
+    {
+      "NetworkAclId": "acl-4e5f6g7h",
+      "VpcId": "vpc-staging-4e5f6g7h",
+      "IsDefault": true,
+      "Entries": [
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        }
+      ],
+      "Associations": [],
+      "OwnerId": "123456789012",
+      "Tags": []
+    },
+    {
+      "NetworkAclId": "acl-8i9j0k1l",
+      "VpcId": "vpc-dev-8i9j0k1l",
+      "IsDefault": true,
+      "Entries": [
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": false,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 100,
+          "Protocol": "-1",
+          "RuleAction": "allow",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        },
+        {
+          "RuleNumber": 32767,
+          "Protocol": "-1",
+          "RuleAction": "deny",
+          "Egress": true,
+          "CidrBlock": "0.0.0.0/0"
+        }
+      ],
+      "Associations": [],
+      "OwnerId": "123456789012",
+      "Tags": []
+    }
+  ]
+}
